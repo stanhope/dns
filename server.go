@@ -10,6 +10,8 @@ import (
 	"net"
 	"sync"
 	"time"
+	"strings"
+	"fmt"
 )
 
 // Maximum number of TCP queries before we close the socket.
@@ -555,10 +557,30 @@ Redo:
 	req := new(Msg)
 	err := req.Unpack(m)
 	if err != nil { // Send a FormatError back
-		x := new(Msg)
-		x.SetRcodeFormatError(req)
-		w.WriteMsg(x)
-		goto Exit
+		proxy_info := false
+		if m[0] == 0xFF {
+			proxy_info_len := int(m[1])
+			fmt.Printf("Could be DNS proxy line enabled message, msglen: %d, proxylen %d\n", len(m), proxy_info_len)
+			m2 := m[(2+proxy_info_len):]
+			err2 := req.Unpack(m2)
+			if err2 != nil {
+				fmt.Printf("  ERROR attempting parse %s\n", err2.Error())
+			} else {
+				fmt.Printf("  Parsed valid message, continuing\n")
+				proxy_info = true
+				details := strings.Split(string(m[2:(2+proxy_info_len)])," ")
+				tenant := details[0]
+				compartment := details[1]
+				req.TenantOcid = &tenant
+				req.CompartmentOcid = &compartment
+			}
+		}
+		if !proxy_info {
+			x := new(Msg)
+			x.SetRcodeFormatError(req)
+			w.WriteMsg(x)
+			goto Exit
+		}
 	}
 	if !srv.Unsafe && req.Response {
 		goto Exit
